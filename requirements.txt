@@ -1,0 +1,37 @@
+#carla
+numpy; python_version < '3.0'
+numpy==1.18.4; python_version >= '3.0'
+distro
+
+#leaderboard
+dictor
+requests
+opencv-python==4.2.0.32
+pygame
+tabulate
+
+
+#scenario_runner
+py-trees==0.8.3
+networkx==2.2
+Shapely==1.6.4.post2
+psutil
+xmlschema==1.0.18
+carla
+ephem
+matplotlib
+six
+
+# frank
+scipy
+wandb
+ray
+pickle-mixin
+tqdm
+einops
+gym
+h5py
+hydra-core==1.1
+scikit-image
+imgaug
+carla-birdeye-view==1.1.1

@@ -1,0 +1,4 @@
+*.pyc
+carla/
+dataset/
+birdview_v2_cache/
