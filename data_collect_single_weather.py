@@ -76,5 +76,5 @@ if __name__ == '__main__':
         logging.info('Running bash %s' % bash)
         subprocess.call(bash,shell=True)
         time.sleep(5)
-    
+    carla.StopCarla()
     
