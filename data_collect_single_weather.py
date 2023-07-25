@@ -1,6 +1,6 @@
 import argparse,os,time,sys,logging,tqdm,datetime
 import subprocess
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 exception = ["routes_town01_long.sh"]
 if not os.path.exists('log'):
     os.mkdir('log')
@@ -16,6 +16,20 @@ def SetArgParser():
 
 def GetLocalTime():
     return datetime.datetime.now().strftime('%m_%d_%H_%M_%S')
+
+class TqdmHandler(logging.StreamHandler):
+    def __init__(self):
+        logging.StreamHandler.__init__(self)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.tqdm.write(msg)
+            self.flush()
+        except(KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
 
 class CarlaManager():
     def __init__(self,carla_root:str):
@@ -44,8 +58,11 @@ class CarlaManager():
 # {carla-root}/CarlaUE4/Binaries/Linux/CarlaUE4-Linux-Shipping CarlaUE4 -resx=800 -resy=600 -quality-level=Epic -fps=20 -world-port=20002
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    logger.addHandler(TqdmHandler())
     args = SetArgParser()
-    print(args)
+    # print(args)
     port = 20000 + args.weather * 2
     data_path = os.path.join('dataset','weather-%d' % args.weather)
     if not os.path.exists(data_path):
