@@ -52,6 +52,14 @@ def GetAvailableGPU(GPU_STAT,GPU_MAX):
 def ReturnGPU(gpu:int,GPU_STAT):
     GPU_STAT[gpu] -= 1
 
+def CheckXAccess(bash:str):
+    x_access = os.access(bash,os.X_OK)
+    if not x_access:
+        logging.info('%s is not executable' % bash)
+        # +x
+        logging.info('chmod +x %s' % bash)
+        os.chmod(bash,os.stat(bash).st_mode | 0o111)
+
 def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     gpuid = GetAvailableGPU(GPU_STAT,GPU_MAX)
     port = PORT_LIST.pop()
@@ -64,6 +72,7 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     logging.info('Running bash %s' % bash_cmd)
     cm = CarlaManager(carla_root,gpuid)
     cm.RunCarla(port)
+    CheckXAccess(bash_cmd)
     bash_base = os.path.basename(bash_cmd).split('.')[0]
     logfile = open('log/%s_%s.log' % (bash_base,datetime.datetime.now().strftime('%m_%d_%H_%M_%S')),'w')
     bash_cmd = "PORT=%d TM_PORT=%d " % (port,tm_port) + bash_cmd
