@@ -70,8 +70,8 @@ def generate_script(
 ):
     lines = []
     lines.append("export HOST=%s\n" % ip)
-    lines.append("export PORT=%d\n" % port)
-    lines.append("export TM_PORT=%d\n" % tm_port)
+    # lines.append("export PORT=%d\n" % port)
+    # lines.append("export TM_PORT=%d\n" % tm_port)
     lines.append("export ROUTES=${LEADERBOARD_ROOT}/data/%s\n" % route)
     lines.append("export SCENARIOS=${LEADERBOARD_ROOT}/data/%s\n" % scenario)
     lines.append("export CARLA_SEED=%d\n" % port)

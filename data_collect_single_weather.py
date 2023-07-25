@@ -10,6 +10,7 @@ def SetArgParser():
     parser.add_argument('--with_carla',action='store_true',default=False)
     parser.add_argument('--carla-root', type=str, default='./carla')
     parser.add_argument('--bash-root', type=str, default='./data_collection/bashs')
+    parser.add_argument('--gpu', type=int, default=0)
     # parser.add_argument('--port', type=int, default=-1)
     args = parser.parse_args()
     return args
@@ -25,8 +26,9 @@ class CarlaManager():
         self.carla_pgid = None
         self.carla_process = None
     
-    def RunCarla(self,port:int):
+    def RunCarla(self,port:int,gpu:int=0):
         carla_cmd = os.path.join(self.carla_root,'CarlaUE4/Binaries/Linux/CarlaUE4-Linux-Shipping CarlaUE4 -resx=800 -resy=600 -quality-level=Epic -fps=20 -world-port=%d' % port)
+        carla_cmd = "CUDA_VISIBLE_DEVICES=%d " % gpu + carla_cmd
         logfile = open('log/carla_%s.log' % GetLocalTime(),'w')
         self.carla_process = subprocess.Popen(carla_cmd,shell=True,stdout=logfile,preexec_fn=os.setsid)
         self.carla_pid = self.carla_process.pid
@@ -47,7 +49,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
     # print(args)
-    port = 20000 + args.weather * 2
+    port = 20000 + args.weather * 2 + args.gpu * 100
     data_path = os.path.join('dataset','weather-%d' % args.weather)
     if not os.path.exists(data_path):
         os.mkdir(data_path)
@@ -57,7 +59,7 @@ if __name__ == '__main__':
     if args.with_carla:
         logging.info('Running Carla on port %d' % port)
         carla = CarlaManager(args.carla_root)
-        carla.RunCarla(port)
+        carla.RunCarla(port,args.gpu)
         logging.info('Carla pid is %d' % carla.carla_pid)
     # carla_pid = RunCarla(port,args.carla_root)
 
@@ -82,7 +84,9 @@ if __name__ == '__main__':
         logfile_path = os.path.join("log","w%d"%args.weather+os.path.basename(bash).split('.')[0]+GetLocalTime()+'.log')
         logfile = open(logfile_path,'w')
         logging.info('Running bash %s' % bash)
-        subprocess.call(bash,shell=True,stdout=logfile)
+        bash_cmd = "PORT=%d TM_PORT=%d " %(port,port+1000)+bash
+        tqdm.tqdm.write(bash_cmd)
+        subprocess.call(bash_cmd,shell=True)
         time.sleep(5)
     carla.StopCarla()
     

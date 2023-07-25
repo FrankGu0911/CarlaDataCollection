@@ -4,5 +4,5 @@ dataset/
 birdview_v2_cache/
 log/
 .vscode/
-data_collection/bashs/*
-data_collection/batch_run/*
+data_collection/bashs
+data_collection/batch_run
