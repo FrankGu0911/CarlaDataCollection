@@ -17,20 +17,6 @@ def SetArgParser():
 def GetLocalTime():
     return datetime.datetime.now().strftime('%m_%d_%H_%M_%S')
 
-class TqdmHandler(logging.StreamHandler):
-    def __init__(self):
-        logging.StreamHandler.__init__(self)
-
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            tqdm.tqdm.write(msg)
-            self.flush()
-        except(KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            self.handleError(record)
-
 class CarlaManager():
     def __init__(self,carla_root:str):
         self.carla_root = carla_root
@@ -59,8 +45,6 @@ class CarlaManager():
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-    logger.addHandler(TqdmHandler())
     args = SetArgParser()
     # print(args)
     port = 20000 + args.weather * 2
@@ -95,7 +79,7 @@ if __name__ == '__main__':
             # +x
             logging.info('chmod +x %s' % bash)
             os.chmod(bash,os.stat(bash).st_mode | 0o111)
-        logfile_path = os.path.join("w%2d"%args.weather, os.path.basename(bash).split('.')[0]+GetLocalTime()+'.log')
+        logfile_path = os.path.join("log","w%d"%args.weather+os.path.basename(bash).split('.')[0]+GetLocalTime()+'.log')
         logfile = open(logfile_path,'w')
         logging.info('Running bash %s' % bash)
         subprocess.call(bash,shell=True,stdout=logfile)
