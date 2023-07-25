@@ -68,6 +68,7 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     logfile = open('log/%s_%s.log' % (bash_base,datetime.datetime.now().strftime('%m_%d_%H_%M_%S')),'w')
     bash_cmd = "PORT=%d TM_PORT=%d " % (port,tm_port) + bash_cmd
     subprocess.call(bash_cmd,shell=True,stdout=logfile,stderr=logfile)
+    cm.StopCarla()
     PORT_LIST.append(port)
     PORT_LIST.append(tm_port)
     ReturnGPU(gpuid,GPU_STAT)
