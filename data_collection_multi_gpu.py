@@ -1,4 +1,4 @@
-import argparse,os,time,sys,logging,tqdm,datetime,subprocess
+import argparse,os,time,sys,logging,tqdm,datetime,subprocess,re
 from multiprocessing import Pool,Manager
 
 exception = ["routes_town01_long.sh"]
@@ -52,6 +52,12 @@ def GetAvailableGPU(GPU_STAT,GPU_MAX):
 def ReturnGPU(gpu:int,GPU_STAT):
     GPU_STAT[gpu] -= 1
 
+def CheckDataPath(data_path:str):
+    if not os.path.exists(data_path):
+        os.mkdir(data_path)
+    if not os.path.exists(os.path.join(data_path,'results')):
+        os.mkdir(os.path.join(data_path,'results'))
+
 def CheckXAccess(bash:str):
     x_access = os.access(bash,os.X_OK)
     if not x_access:
@@ -63,7 +69,7 @@ def CheckXAccess(bash:str):
 def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     gpuid = GetAvailableGPU(GPU_STAT,GPU_MAX)
     port = PORT_LIST.pop()
-    tm_port = PORT_LIST.pop()
+    tm_port = port + 1000
     while gpuid == -1:
         time.sleep(1)
         logging.info('Waiting for available GPU')
@@ -73,15 +79,19 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     cm = CarlaManager(carla_root,gpuid)
     cm.RunCarla(port)
     CheckXAccess(bash_cmd)
+    #Get Data Path dataset/weather-0
+    pattern = re.compile(r'weather-\d+')
+    weather = pattern.findall(bash_cmd)[0]
+    data_path = os.path.join('dataset',weather)
+    CheckDataPath(data_path)
     bash_base = os.path.basename(bash_cmd).split('.')[0]
-    logfile = open('log/%s_%s.log' % (bash_base,datetime.datetime.now().strftime('%m_%d_%H_%M_%S')),'w')
+    logfile = open('log/%s_%s_%s.log' % (datetime.datetime.now().strftime('%m_%d_%H_%M_%S'),weather,bash_base),'w')
     bash_cmd = "PORT=%d TM_PORT=%d " % (port,tm_port) + bash_cmd
     subprocess.call(bash_cmd,shell=True,stdout=logfile,stderr=logfile)
     cm.StopCarla()
     PORT_LIST.append(port)
-    PORT_LIST.append(tm_port)
+    # PORT_LIST.append(tm_port)
     ReturnGPU(gpuid,GPU_STAT)
-    # subprocess.call(bash_cmd,shell=True)
     
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -93,7 +103,7 @@ if __name__ == '__main__':
         GPU_STAT[args.gpu[i]] = 0
         GPU_MAX[args.gpu[i]] = args.carla_num[i]
     # Init PORT_LIST
-    for i in range(20000,20002+sum(args.carla_num)*2):
+    for i in range(20000,20002+sum(args.carla_num)*2,2):
         PORT_LIST.append(i)
     # Find all bashs
     bash_list = []
@@ -102,9 +112,8 @@ if __name__ == '__main__':
             if file in exception:
                 continue
             bash_list.append(os.path.join(root,file))
+    bash_list.sort()
     logging.info('Found %d bashs' % len(bash_list))
-    
-    
     pool = Pool(processes=sum(args.carla_num))
     for bash in bash_list:
         pool.apply_async(CollectOneBash,args=(args.carla_root,bash,GPU_STAT,GPU_MAX,PORT_LIST))
