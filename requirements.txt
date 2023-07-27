@@ -1,12 +1,12 @@
 #carla
 numpy; python_version < '3.0'
-numpy==1.18.4; python_version >= '3.0'
+numpy==1.18.3; python_version >= '3.0'
 distro
 
 #leaderboard
 dictor
 requests
-opencv-python==4.2.0.32
+opencv-python==4.2.0.34
 pygame
 tabulate
 
