@@ -116,6 +116,7 @@ def GetBashs(base_path:str,weather:int):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
+    CheckDataPath('log')
     # Init GPU_STAT and GPU_MAX
     if len(args.carla_num) == 1:
         args.carla_num = args.carla_num * len(args.gpu)
