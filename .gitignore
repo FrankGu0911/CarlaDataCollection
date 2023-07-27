@@ -1,6 +1,7 @@
 *.pyc
 carla/
 dataset/
+dataset-done/
 birdview_v2_cache/
 log/
 .vscode/

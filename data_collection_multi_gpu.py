@@ -9,6 +9,8 @@ def SetArgParser():
     parser.add_argument('--carla_num', type=int, nargs='+', default=[1])
     parser.add_argument('--carla_root', type=str, default='./carla')
     parser.add_argument('--bash_root', type=str, default='./data_collection/bashs')
+    # weather
+    parser.add_argument('--weather', type=int, nargs='+', default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13])
     args = parser.parse_args()
     return args
 
@@ -87,12 +89,30 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     bash_base = os.path.basename(bash_cmd).split('.')[0]
     logfile = open('log/%s_%s_%s.log' % (datetime.datetime.now().strftime('%m_%d_%H_%M_%S'),weather,bash_base),'w')
     bash_cmd = "PORT=%d TM_PORT=%d " % (port,tm_port) + bash_cmd
-    subprocess.call(bash_cmd,shell=True,stdout=logfile,stderr=logfile)
-    cm.StopCarla()
-    PORT_LIST.append(port)
-    # PORT_LIST.append(tm_port)
-    ReturnGPU(gpuid,GPU_STAT)
-    
+    p = subprocess.Popen(bash_cmd,shell=True,stdout=logfile,stderr=logfile)
+    try:
+        p.wait()
+    except KeyboardInterrupt:
+        lb_pg = os.getpgid(p.pid)
+        logging.warning('KeyboardInterrupt, kill process group %d' % lb_pg)
+        os.killpg(lb_pg,9)
+    finally:
+        cm.StopCarla()
+        PORT_LIST.append(port)
+        # PORT_LIST.append(tm_port)
+        ReturnGPU(gpuid,GPU_STAT)
+
+def GetBashs(base_path:str,weather:int):
+    bash_list = []
+    path = os.path.join(base_path,'weather-%d' % weather)
+    for root,dirs,files in os.walk(path):
+        for file in files:
+            if file in exception:
+                continue
+            bash_list.append(os.path.join(root,file))
+    bash_list.sort()
+    return bash_list
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
@@ -106,12 +126,10 @@ if __name__ == '__main__':
     for i in range(20000,20002+sum(args.carla_num)*2,2):
         PORT_LIST.append(i)
     # Find all bashs
+    weather_list = args.weather
     bash_list = []
-    for root,dirs,files in os.walk(args.bash_root):
-        for file in files:
-            if file in exception:
-                continue
-            bash_list.append(os.path.join(root,file))
+    for weather in weather_list:
+        bash_list += GetBashs(args.bash_root,weather)
     bash_list.sort()
     logging.info('Found %d bashs' % len(bash_list))
     pool = Pool(processes=sum(args.carla_num))
@@ -120,6 +138,5 @@ if __name__ == '__main__':
         time.sleep(1)
     pool.close()
     pool.join()
-    # for bash in bash_list:
-    #     logging.info('Found bash %s' % bash)
+
     
