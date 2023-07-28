@@ -34,12 +34,13 @@ dt = {
     "2d_bbs_front": "%04d.npy",
 }
 
-
 def SetArgParser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',type=str,default='dataset')
+    parser.add_argument('--data_path',type=str,required=True)
+    parser.add_argument('--remove_haze',action='store_true',default=False)
     parser.add_argument('--merge',action='store_true',default=False)
     parser.add_argument('--delete_origin',action='store_true',default=False)
+    parser.add_argument('--index',action='store_true',default=False)
     return parser.parse_args()
 
 def GetCpuNum():
@@ -131,20 +132,33 @@ def RecollectBlockedData(data_path:str):
 def CheckMergeData(data_path:str):
     if not os.path.exists(data_path):
         raise Exception('Data path %s not exists' % data_path)
-    if not os.path.exists(os.path.join(data_path,'measurements')):
-        return True
-    if not os.path.exists(os.path.join(data_path,'rgb_front')):
-        return True
+    measurements_path = os.path.join(data_path,'measurements')
+    rgb_front_path = os.path.join(data_path,'rgb_front')
     measurements_full_path = os.path.join(data_path,'measurements_full')
     rgb_full_path = os.path.join(data_path,'rgb_full')
-    if not os.path.exists(measurements_full_path) or not os.path.exists(rgb_full_path):
-        return False
     lidar_path = os.path.join(data_path,'lidar')
+    measurements = os.path.exists(measurements_path)
+    rgb_front = os.path.exists(rgb_front_path)
+    measurements_full = os.path.exists(measurements_full_path)
+    rgb_full = os.path.exists(rgb_full_path)
+    lidar = os.path.exists(lidar_path)
+    if measurements or measurements_full:
+        raise Exception('Cannot find measurements')
+    if rgb_front or rgb_full:
+        raise Exception('Cannot find rgb')
+    if not lidar:
+        raise Exception('Cannot find lidar')
+    if not measurements_full:
+        return False
+    if not rgb_full:
+        return False
     if len(os.listdir(measurements_full_path)) != len(os.listdir(lidar_path)):
         return False
     if len(os.listdir(rgb_full_path)) != len(os.listdir(lidar_path)):
         return False
-    return True
+    if measurements_full and rgb_full:
+        return True
+    raise Exception('Unknown Error')
 
 def MergeData(route:str):
     if CheckMergeData(route):
@@ -206,6 +220,28 @@ def DeleteAfterMerge(data_path:str):
             os.system('rm -rf %s' % actor_data_path)
 
 
+def GenerateDatasetIndexFile(dataset_path:str):
+    if not os.path.exists(dataset_path):
+        raise Exception('Dataset path %s not exists' % dataset_path)
+    routes = []
+    for i in range(14):
+        weather_data_path = os.path.join(dataset_path,'weather_%d' % i,'data')
+        if not os.path.exists(weather_data_path):
+            continue
+        for route in os.listdir(weather_data_path):
+            route_path = os.path.join(weather_data_path,route)
+            if not os.path.isdir(route_path):
+                continue
+            if CheckMergeData(route_path):
+                frames = len(os.listdir(os.path.join(route_path, "measurements_full")))
+            else:
+                frames = len(os.listdir(os.path.join(route_path, "measurements")))
+            relative_route_path = os.path.relpath('weather_%d' % i,'data',route)
+            routes.append((relative_route_path,frames))
+    dataset_index_filepath = os.path.join(dataset_path,'dataset_index.txt')
+    with open(dataset_index_filepath,'w') as f:
+        for route,frames in routes:
+            f.write('%s %d\n' % (route,frames))
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -215,15 +251,16 @@ if __name__ == '__main__':
     if data_list == []:
         logging.warning('No data found')
         exit(0)
-    blocked_data_list = []
-    blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum()*2,desc='Getting blocked data')
-    blocked_data_list = [item for sublist in blocked_data_list for item in sublist]
-    if len(blocked_data_list) == 0:
-        logging.info('No blocked data found')
-    else:
-        logging.info('Found %d blocked data' % len(blocked_data_list))
-        process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
-        process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
+    if args.remove_haze:
+        blocked_data_list = []
+        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum()*2,desc='Getting blocked data')
+        blocked_data_list = [item for sublist in blocked_data_list for item in sublist]
+        if len(blocked_data_list) == 0:
+            logging.info('No blocked data found')
+        else:
+            logging.info('Found %d blocked data' % len(blocked_data_list))
+            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
+            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
     if args.merge:
         process_map(MergeData,data_list,max_workers=GetCpuNum(),desc='Merging data')
         if args.delete_origin:
@@ -232,5 +269,7 @@ if __name__ == '__main__':
             logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
+    if args.generate_index:
+        GenerateDatasetIndexFile(args.data_path)
 
     
