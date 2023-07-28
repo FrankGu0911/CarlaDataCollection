@@ -160,40 +160,40 @@ def CheckMergeData(data_path:str):
         return True
     raise Exception('Unknown Error')
 
-def MergeData(route:str):
-    if CheckMergeData(route):
-        logging.info('Data %s already merged' % route)
+def MergeData(data_path:str):
+    if CheckMergeData(data_path):
+        logging.info('Data %s already merged' % data_path)
         return
-    frames = len(os.listdir(os.path.join(route, "measurements")))
-    if not os.path.exists(os.path.join(route, "rgb_full")):
-        os.mkdir(os.path.join(route, "rgb_full"))
-    if not os.path.exists(os.path.join(route, "measurements_full")):
-        os.mkdir(os.path.join(route, "measurements_full"))
+    frames = len(os.listdir(os.path.join(data_path, "measurements")))
+    if not os.path.exists(os.path.join(data_path, "rgb_full")):
+        os.mkdir(os.path.join(data_path, "rgb_full"))
+    if not os.path.exists(os.path.join(data_path, "measurements_full")):
+        os.mkdir(os.path.join(data_path, "measurements_full"))
     for i in range(frames):
-        img_front = Image.open(os.path.join(route, "rgb_front/%04d.png" % i))
-        img_left = Image.open(os.path.join(route, "rgb_left/%04d.png" % i))
-        img_right = Image.open(os.path.join(route, "rgb_right/%04d.png" % i))
+        img_front = Image.open(os.path.join(data_path, "rgb_front/%04d.png" % i))
+        img_left = Image.open(os.path.join(data_path, "rgb_left/%04d.png" % i))
+        img_right = Image.open(os.path.join(data_path, "rgb_right/%04d.png" % i))
         new = Image.new(img_front.mode, (800, 1800))
         new.paste(img_front, (0, 0))
         new.paste(img_left, (0, 600))
         new.paste(img_right, (0, 1200))
-        new.save(os.path.join(route, "rgb_full", "%04d.png" % i))
+        new.save(os.path.join(data_path, "rgb_full", "%04d.png" % i))
 
         measurements = json.load(
-            open(os.path.join(route, "measurements/%04d.json" % i))
+            open(os.path.join(data_path, "measurements/%04d.json" % i))
         )
         actors_data = json.load(
-            open(os.path.join(route, "actors_data/%04d.json" % i))
+            open(os.path.join(data_path, "actors_data/%04d.json" % i))
         )
         affordances = np.load(
-            os.path.join(route, "affordances/%04d.npy" % i), allow_pickle=True
+            os.path.join(data_path, "affordances/%04d.npy" % i), allow_pickle=True
         )
 
         measurements["actors_data"] = actors_data
         measurements["stop_sign"] = affordances.item()["stop_sign"]
         json.dump(
             measurements,
-            open(os.path.join(route, "measurements_full/%04d.json" % i), "w"),
+            open(os.path.join(data_path, "measurements_full/%04d.json" % i), "w"),
         )
 
 def DeleteAfterMerge(data_path:str):
@@ -219,6 +219,13 @@ def DeleteAfterMerge(data_path:str):
         if os.path.exists(actor_data_path):
             os.system('rm -rf %s' % actor_data_path)
 
+def MergeAndDelete(data_path:str):
+    if not os.path.exists(data_path):
+        raise Exception('Data path %s not exists' % data_path)
+    if not os.path.isdir(data_path):
+        raise Exception('Data path %s is not a directory' % data_path)
+    MergeData(data_path)
+    DeleteAfterMerge(data_path)
 
 def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
@@ -261,12 +268,11 @@ if __name__ == '__main__':
             logging.info('Found %d blocked data' % len(blocked_data_list))
             process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
             process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
-    if args.merge:
-        process_map(MergeData,data_list,max_workers=GetCpuNum(),desc='Merging data')
-        if args.delete_origin:
-            process_map(DeleteAfterMerge,data_list,max_workers=GetCpuNum()*2,desc='Deleting merged origin data')
-        else:
-            logging.info('Not deleting origin data')
+    if args.merge and args.delete_origin:
+        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum(),desc='Merging data')
+    elif args.merge:
+        process_map(MergeData,data_list,max_workers=GetCpuNum(),desc='Deleting merged origin data')
+        logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
     if args.index:
