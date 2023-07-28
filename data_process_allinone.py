@@ -269,7 +269,7 @@ if __name__ == '__main__':
             logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
-    if args.generate_index:
+    if args.index:
         GenerateDatasetIndexFile(args.data_path)
 
     
