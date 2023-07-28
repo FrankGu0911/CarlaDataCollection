@@ -225,7 +225,7 @@ if __name__ == '__main__':
         process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
         process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
     if args.merge:
-        process_map(MergeData,data_list,max_workers=GetCpuNum()*2,desc='Merging data')
+        process_map(MergeData,data_list,max_workers=GetCpuNum(),desc='Merging data')
         if args.delete_origin:
             process_map(DeleteAfterMerge,data_list,max_workers=GetCpuNum()*2,desc='Deleting merged origin data')
         else:
