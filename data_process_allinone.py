@@ -232,7 +232,12 @@ def ConvertPngToJpg(data_path:str):
         for i in os.listdir(rgb_full_path):
             if i.endswith('.png'):
                 img = Image.open(os.path.join(rgb_full_path,i))
-                img.save(os.path.join(rgb_full_path,i.replace('.png','.jpg')), quality=95)
+                try:
+                    img.save(os.path.join(rgb_full_path,i.replace('.png','.jpg')), quality=95)
+                except Exception as e:
+                    print(e)
+                    print('Error in %s' % os.path.join(rgb_full_path,i))
+                    raise e
                 os.remove(os.path.join(rgb_full_path,i))
     else:
         rgb_front_path = os.path.join(data_path,'rgb_front')
@@ -259,23 +264,27 @@ def GenerateDatasetIndexFile(dataset_path:str):
         raise Exception('Dataset path %s not exists' % dataset_path)
     routes = []
     for i in range(14):
-        weather_data_path = os.path.join(dataset_path,'weather_%d' % i,'data')
+        weather_data_path = os.path.join(dataset_path,'weather-%d' % i,'data')
         if not os.path.exists(weather_data_path):
+            logging.warning('Weather %d not exists' % i)
+            logging.warning('%s' % weather_data_path)
             continue
         for route in os.listdir(weather_data_path):
             route_path = os.path.join(weather_data_path,route)
             if not os.path.isdir(route_path):
+                logging.warning('Route %s not exists' % route)
                 continue
             if CheckMergeData(route_path):
                 frames = len(os.listdir(os.path.join(route_path, "measurements_full")))
             else:
                 frames = len(os.listdir(os.path.join(route_path, "measurements")))
-            relative_route_path = os.path.relpath('weather_%d' % i,'data',route)
+            relative_route_path = os.path.join('weather-%d' % i,'data',route)
             routes.append((relative_route_path,frames))
     dataset_index_filepath = os.path.join(dataset_path,'dataset_index.txt')
     with open(dataset_index_filepath,'w') as f:
         for route,frames in routes:
             f.write('%s %d\n' % (route,frames))
+    f.close()
 
 def GetChunkSize(data_list:list):
     chunk_size = len(data_list) // GetCpuNum()
