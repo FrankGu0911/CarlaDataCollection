@@ -40,6 +40,7 @@ def SetArgParser():
     parser.add_argument('--remove_haze',action='store_true',default=False)
     parser.add_argument('--merge',action='store_true',default=False)
     parser.add_argument('--delete_origin',action='store_true',default=False)
+    parser.add_argument('--convert_to_jpg',action='store_true',default=False)
     parser.add_argument('--index',action='store_true',default=False)
     return parser.parse_args()
 
@@ -227,6 +228,28 @@ def MergeAndDelete(data_path:str):
     MergeData(data_path)
     DeleteAfterMerge(data_path)
 
+def ConvertPngToJpg(data_path:str):
+    if CheckMergeData(data_path):
+        rgb_full_path = os.path.join(data_path,'rgb_full')
+        for i in range(len(os.listdir(rgb_full_path))):
+            img = Image.open(os.path.join(rgb_full_path,'%04d.png' % i))
+            img.save(os.path.join(rgb_full_path,'%04d.jpg' % i), quality=95)
+            os.remove(os.path.join(rgb_full_path,'%04d.png' % i))
+    else:
+        rgb_front_path = os.path.join(data_path,'rgb_front')
+        rgb_left_path = os.path.join(data_path,'rgb_left')
+        rgb_right_path = os.path.join(data_path,'rgb_right')
+        for i in range(len(os.listdir(rgb_front_path))):
+            img = Image.open(os.path.join(rgb_front_path,'%04d.png' % i))
+            img.save(os.path.join(rgb_front_path,'%04d.jpg' % i), quality=95)
+            os.remove(os.path.join(rgb_front_path,'%04d.png' % i))
+            img = Image.open(os.path.join(rgb_left_path,'%04d.png' % i))
+            img.save(os.path.join(rgb_left_path,'%04d.jpg' % i), quality=95)
+            os.remove(os.path.join(rgb_left_path,'%04d.png' % i))
+            img = Image.open(os.path.join(rgb_right_path,'%04d.png' % i))
+            img.save(os.path.join(rgb_right_path,'%04d.jpg' % i), quality=95)
+            os.remove(os.path.join(rgb_right_path,'%04d.png' % i))
+        
 def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
         raise Exception('Dataset path %s not exists' % dataset_path)
@@ -260,14 +283,14 @@ if __name__ == '__main__':
         exit(0)
     if args.remove_haze:
         blocked_data_list = []
-        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum()*2,desc='Getting blocked data')
+        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum(),desc='Getting blocked data')
         blocked_data_list = [item for sublist in blocked_data_list for item in sublist]
         if len(blocked_data_list) == 0:
             logging.info('No blocked data found')
         else:
             logging.info('Found %d blocked data' % len(blocked_data_list))
-            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
-            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
+            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum(),desc='Removing blocked data')
+            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum(),desc='Recollecting blocked data')
     if args.merge and args.delete_origin:
         process_map(MergeAndDelete,data_list,max_workers=GetCpuNum(),desc='Merging data')
     elif args.merge:
@@ -275,6 +298,8 @@ if __name__ == '__main__':
         logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
+    if args.convert:
+        process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),desc='Converting png to jpg')
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
 
