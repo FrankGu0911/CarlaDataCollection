@@ -229,24 +229,30 @@ def MergeAndDelete(data_path:str):
 def ConvertPngToJpg(data_path:str):
     if CheckMergeData(data_path):
         rgb_full_path = os.path.join(data_path,'rgb_full')
-        for i in range(len(os.listdir(rgb_full_path))):
-            img = Image.open(os.path.join(rgb_full_path,'%04d.png' % i))
-            img.save(os.path.join(rgb_full_path,'%04d.jpg' % i), quality=95)
-            os.remove(os.path.join(rgb_full_path,'%04d.png' % i))
+        for i in os.listdir(rgb_full_path):
+            if i.endswith('.png'):
+                img = Image.open(os.path.join(rgb_full_path,i))
+                img.save(os.path.join(rgb_full_path,i.replace('.png','.jpg')), quality=95)
+                os.remove(os.path.join(rgb_full_path,i))
     else:
         rgb_front_path = os.path.join(data_path,'rgb_front')
         rgb_left_path = os.path.join(data_path,'rgb_left')
         rgb_right_path = os.path.join(data_path,'rgb_right')
-        for i in range(len(os.listdir(rgb_front_path))):
-            img = Image.open(os.path.join(rgb_front_path,'%04d.png' % i))
-            img.save(os.path.join(rgb_front_path,'%04d.jpg' % i), quality=95)
-            os.remove(os.path.join(rgb_front_path,'%04d.png' % i))
-            img = Image.open(os.path.join(rgb_left_path,'%04d.png' % i))
-            img.save(os.path.join(rgb_left_path,'%04d.jpg' % i), quality=95)
-            os.remove(os.path.join(rgb_left_path,'%04d.png' % i))
-            img = Image.open(os.path.join(rgb_right_path,'%04d.png' % i))
-            img.save(os.path.join(rgb_right_path,'%04d.jpg' % i), quality=95)
-            os.remove(os.path.join(rgb_right_path,'%04d.png' % i))
+        for i in os.listdir(rgb_front_path):
+            if i.endswith('.png'):
+                img = Image.open(os.path.join(rgb_front_path,i))
+                img.save(os.path.join(rgb_front_path,i.replace('.png','.jpg')), quality=95)
+                os.remove(os.path.join(rgb_front_path,i))
+        for i in os.listdir(rgb_left_path):
+            if i.endswith('.png'):
+                img = Image.open(os.path.join(rgb_left_path,i))
+                img.save(os.path.join(rgb_left_path,i.replace('.png','.jpg')), quality=95)
+                os.remove(os.path.join(rgb_left_path,i))
+        for i in os.listdir(rgb_right_path):
+            if i.endswith('.png'):
+                img = Image.open(os.path.join(rgb_right_path,i))
+                img.save(os.path.join(rgb_right_path,i.replace('.png','.jpg')), quality=95)
+                os.remove(os.path.join(rgb_right_path,i))
         
 def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
@@ -271,33 +277,40 @@ def GenerateDatasetIndexFile(dataset_path:str):
         for route,frames in routes:
             f.write('%s %d\n' % (route,frames))
 
+def GetChunkSize(data_list:list):
+    chunk_size = len(data_list) // GetCpuNum()
+    if chunk_size == 0:
+        chunk_size = 1
+    return chunk_size
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
     data_list = GetDataListFromPath(args.data_path)
     data_list.sort()
+    chunksize = GetChunkSize(data_list)
     if data_list == []:
         logging.warning('No data found')
         exit(0)
     if args.remove_haze:
         blocked_data_list = []
-        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum()*2,desc='Getting blocked data')
+        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Getting blocked data')
         blocked_data_list = [item for sublist in blocked_data_list for item in sublist]
         if len(blocked_data_list) == 0:
             logging.info('No blocked data found')
         else:
             logging.info('Found %d blocked data' % len(blocked_data_list))
-            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
-            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
+            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Removing blocked data')
+            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Recollecting blocked data')
     if args.merge and args.delete_origin:
-        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum()*2,desc='Merging data')
+        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merge and delete origin data')
     elif args.merge:
-        process_map(MergeData,data_list,max_workers=GetCpuNum()*2,desc='Deleting merged origin data')
+        process_map(MergeData,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merging data')
         logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
-    if args.convert:
-        process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum()*2,desc='Converting png to jpg')
+    if args.convert_to_jpg:
+        process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Converting png to jpg')
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
 
