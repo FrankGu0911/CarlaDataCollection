@@ -103,13 +103,11 @@ def GetBlockedDataList(data_path:str):
     return blocked_data_list
 
 def RemoveHazeData(task:tuple):
-    f = open("haze_stat.txt", "a")
     route_dir, end_id, length = task
     for i in range(end_id - length + 6, end_id - 3):
         for key in dt:
             # f.write(os.path.join(route_dir, key, dt[key] % i)+"\n")
             os.remove(os.path.join(route_dir, key, dt[key] % i))
-    f.close()
 
 def RecollectBlockedData(data_path:str):
     for folder in dt:
@@ -143,9 +141,9 @@ def CheckMergeData(data_path:str):
     measurements_full = os.path.exists(measurements_full_path)
     rgb_full = os.path.exists(rgb_full_path)
     lidar = os.path.exists(lidar_path)
-    if measurements or measurements_full:
+    if not (measurements or measurements_full):
         raise Exception('Cannot find measurements')
-    if rgb_front or rgb_full:
+    if not (rgb_front or rgb_full):
         raise Exception('Cannot find rgb')
     if not lidar:
         raise Exception('Cannot find lidar')
@@ -283,23 +281,23 @@ if __name__ == '__main__':
         exit(0)
     if args.remove_haze:
         blocked_data_list = []
-        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum(),desc='Getting blocked data')
+        blocked_data_list = process_map(GetBlockedDataList,data_list,max_workers=GetCpuNum()*2,desc='Getting blocked data')
         blocked_data_list = [item for sublist in blocked_data_list for item in sublist]
         if len(blocked_data_list) == 0:
             logging.info('No blocked data found')
         else:
             logging.info('Found %d blocked data' % len(blocked_data_list))
-            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum(),desc='Removing blocked data')
-            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum(),desc='Recollecting blocked data')
+            process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum()*2,desc='Removing blocked data')
+            process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum()*2,desc='Recollecting blocked data')
     if args.merge and args.delete_origin:
-        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum(),desc='Merging data')
+        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum()*2,desc='Merging data')
     elif args.merge:
-        process_map(MergeData,data_list,max_workers=GetCpuNum(),desc='Deleting merged origin data')
+        process_map(MergeData,data_list,max_workers=GetCpuNum()*2,desc='Deleting merged origin data')
         logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
     if args.convert:
-        process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),desc='Converting png to jpg')
+        process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum()*2,desc='Converting png to jpg')
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
 
