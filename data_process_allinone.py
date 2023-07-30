@@ -142,10 +142,13 @@ def CheckMergeData(data_path:str):
     rgb_full = os.path.exists(rgb_full_path)
     lidar = os.path.exists(lidar_path)
     if not (measurements or measurements_full):
+        logging.error('Cannot find measurements: %s' % data_path)
         raise Exception('Cannot find measurements')
     if not (rgb_front or rgb_full):
+        logging.error('Cannot find rgb: %s' % data_path)
         raise Exception('Cannot find rgb')
     if not lidar:
+        logging.error('Cannot find lidar: %s' % data_path)
         raise Exception('Cannot find lidar')
     if not measurements_full:
         return False
