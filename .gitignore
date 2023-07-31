@@ -2,6 +2,7 @@
 carla/
 dataset/
 dataset-done/
+dataset-process/
 birdview_v2_cache/
 log/
 .vscode/

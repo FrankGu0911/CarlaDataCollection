@@ -261,7 +261,13 @@ def ConvertPngToJpg(data_path:str):
                 img = Image.open(os.path.join(rgb_right_path,i))
                 img.save(os.path.join(rgb_right_path,i.replace('.png','.jpg')), quality=95)
                 os.remove(os.path.join(rgb_right_path,i))
-        
+    rgb_rear_path = os.path.join(data_path,'rgb_rear')
+    for i in os.listdir(rgb_rear_path):
+        if i.endswith('.png'):
+            img = Image.open(os.path.join(rgb_rear_path,i))
+            img.save(os.path.join(rgb_rear_path,i.replace('.png','.jpg')), quality=95)
+            os.remove(os.path.join(rgb_rear_path,i))
+    
 def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
         raise Exception('Dataset path %s not exists' % dataset_path)
