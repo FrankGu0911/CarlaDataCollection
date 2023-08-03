@@ -1,6 +1,6 @@
 import os
 import random
-
+weather_num = 20
 routes = {}
 routes["training_routes/routes_town01_short.xml"] = "scenarios/town01_all_scenarios.json"
 routes["training_routes/routes_town01_tiny.xml"] = "scenarios/town01_all_scenarios.json"
@@ -27,7 +27,7 @@ routes["additional_routes/routes_town06_long.xml"] = "scenarios/town06_all_scena
 
 ip_ports = []
 
-for port in range(20000, 20028, 2):
+for port in range(20000, 20000+weather_num*2, 2):
     ip_ports.append(("localhost", port, port + 500))
 
 
@@ -35,7 +35,7 @@ carla_seed = 2000
 traffic_seed = 2000
 
 configs = []
-for i in range(14):
+for i in range(weather_num):
     configs.append("weather-%d.yaml" % i)
 
 
@@ -66,7 +66,7 @@ def generate_script(
     return base
 
 
-for i in range(14):
+for i in range(weather_num):
     if not os.path.exists("bashs"):
         os.mkdir("bashs")
     os.mkdir("bashs/weather-%d" % i)
