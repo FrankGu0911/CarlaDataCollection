@@ -1,4 +1,4 @@
-import os,argparse,json,time,logging
+import os,argparse,json,time,logging,shutil
 from tqdm.contrib.concurrent import process_map
 from PIL import Image
 import numpy as np
@@ -210,16 +210,21 @@ def DeleteAfterMerge(data_path:str):
     measurements_full_path = os.path.join(data_path,'measurements_full')
     if os.path.exists(rgb_full_path):
         if os.path.exists(rgb_front_path):
-            os.system('rm -rf %s' % rgb_front_path)
+            shutil.rmtree(rgb_front_path)
+            # os.system('rm -rf %s' % rgb_front_path)
         if os.path.exists(rgb_left_path):
-            os.system('rm -rf %s' % rgb_left_path)
+            shutil.rmtree(rgb_left_path)
+            # os.system('rm -rf %s' % rgb_left_path)
         if os.path.exists(rgb_right_path):
-            os.system('rm -rf %s' % rgb_right_path)
+            shutil.rmtree(rgb_right_path)
+            # os.system('rm -rf %s' % rgb_right_path)
     if os.path.exists(measurements_full_path):
         if os.path.exists(measurements_path):
-            os.system('rm -rf %s' % measurements_path)
+            shutil.rmtree(measurements_path)
+            # os.system('rm -rf %s' % measurements_path)
         if os.path.exists(actor_data_path):
-            os.system('rm -rf %s' % actor_data_path)
+            shutil.rmtree(actor_data_path)
+            # os.system('rm -rf %s' % actor_data_path)
 
 def MergeAndDelete(data_path:str):
     if not os.path.exists(data_path):
