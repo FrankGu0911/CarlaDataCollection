@@ -17,6 +17,7 @@ def SetArgParser():
 GPU_STAT = Manager().dict()
 GPU_MAX = Manager().dict()
 PORT_LIST = Manager().list()
+PGID_LIST = Manager().list()
 
 class CarlaManager():
     def __init__(self,carla_root:str,gpuid:int=0):
@@ -28,7 +29,7 @@ class CarlaManager():
         self.carla_process = None
     
     def RunCarla(self,port:int):
-        carla_cmd = os.path.join(self.carla_root,'CarlaUE4/Binaries/Linux/CarlaUE4-Linux-Shipping CarlaUE4 -resx=800 -resy=600 -quality-level=Epic -fps=20 -world-port=%d' % port)
+        carla_cmd = os.path.join(self.carla_root,'CarlaUE4/Binaries/Linux/CarlaUE4-Linux-Shipping CarlaUE4 -quality-level=Epic -fps=20 -world-port=%d' % port)
         carla_cmd = "CUDA_VISIBLE_DEVICES=%d " % self.gpuid + carla_cmd
         logfile = open('log/carla_%s.log' % datetime.datetime.now().strftime('%m_%d_%H_%M_%S'),'w')
         self.carla_process = subprocess.Popen(carla_cmd,shell=True,stdout=logfile,stderr=logfile,preexec_fn=os.setsid)
@@ -68,7 +69,7 @@ def CheckXAccess(bash:str):
         logging.info('chmod +x %s' % bash)
         os.chmod(bash,os.stat(bash).st_mode | 0o111)
 
-def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
+def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST,PGID_LIST):
     gpuid = GetAvailableGPU(GPU_STAT,GPU_MAX)
     port = PORT_LIST.pop()
     tm_port = port + 1000
@@ -89,7 +90,11 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
     bash_base = os.path.basename(bash_cmd).split('.')[0]
     logfile = open('log/%s_%s_%s.log' % (datetime.datetime.now().strftime('%m_%d_%H_%M_%S'),weather,bash_base),'w')
     bash_cmd = "PORT=%d TM_PORT=%d " % (port,tm_port) + bash_cmd
-    p = subprocess.Popen(bash_cmd,shell=True,stdout=logfile,stderr=logfile)
+    p = subprocess.Popen(bash_cmd,shell=True,stdout=logfile,stderr=logfile,preexec_fn=os.setsid)
+    pgid = os.getpgid(p.pid)
+    carla_pgid = cm.carla_pgid
+    PGID_LIST.append(pgid)
+    PGID_LIST.append(carla_pgid)
     try:
         p.wait()
     except KeyboardInterrupt:
@@ -101,14 +106,18 @@ def CollectOneBash(carla_root:str,bash_cmd:str,GPU_STAT,GPU_MAX,PORT_LIST):
         PORT_LIST.append(port)
         # PORT_LIST.append(tm_port)
         ReturnGPU(gpuid,GPU_STAT)
+    if carla_pgid in PGID_LIST:
+        PGID_LIST.remove(carla_pgid)
+    if pgid in PGID_LIST:
+        PGID_LIST.remove(pgid)
 
 def GetBashs(base_path:str,weather:int):
     bash_list = []
     path = os.path.join(base_path,'weather-%d' % weather)
     for root,dirs,files in os.walk(path):
         for file in files:
-            if file in exception:
-                continue
+            # if file in exception:
+            #     continue
             bash_list.append(os.path.join(root,file))
     bash_list.sort()
     return bash_list
@@ -134,10 +143,18 @@ if __name__ == '__main__':
     bash_list.sort()
     logging.info('Found %d bashs' % len(bash_list))
     pool = Pool(processes=sum(args.carla_num))
-    for bash in bash_list:
-        pool.apply_async(CollectOneBash,args=(args.carla_root,bash,GPU_STAT,GPU_MAX,PORT_LIST))
-        time.sleep(1)
-    pool.close()
-    pool.join()
-
+    try:
+        for bash in bash_list:
+            pool.apply_async(CollectOneBash,args=(args.carla_root,bash,GPU_STAT,GPU_MAX,PORT_LIST,PGID_LIST))
+            time.sleep(1)
+        pool.close()
+        pool.join()
+    except KeyboardInterrupt:
+        pgid_list = list(set(PGID_LIST))
+        logging.warning('KeyboardInterrupt, kill all process group')
+        logging.warning('Total process num: %d' %len(pgid_list))
+        for pgid in pgid_list:
+            logging.warning('kill process group %d' % pgid)
+        # for pgid in PGID_LIST:
+            os.killpg(pgid,9)
     
