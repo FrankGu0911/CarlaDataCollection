@@ -1,6 +1,6 @@
 import os
 import random
-weather_num = 20
+weather_num = 21
 routes = {}
 routes["training_routes/routes_town01_short.xml"] = "scenarios/town01_all_scenarios.json"
 routes["training_routes/routes_town01_tiny.xml"] = "scenarios/town01_all_scenarios.json"
