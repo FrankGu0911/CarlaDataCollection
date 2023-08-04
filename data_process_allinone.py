@@ -49,7 +49,7 @@ def GetCpuNum():
 
 def GetDataListFromPath(path:str):
     data_list = []
-    for i in range(14):
+    for i in range(21):
         data_path = os.path.join(path,'weather-%d' % i,'data')
         if not os.path.exists(data_path):
             # print('Path %s not exists' % data_path)
@@ -162,7 +162,7 @@ def CheckMergeData(data_path:str):
         return True
     raise Exception('Unknown Error')
 
-def MergeData(data_path:str):
+def MergeData(data_path:str,convert_jpg:bool):
     if CheckMergeData(data_path):
         logging.info('Data %s already merged' % data_path)
         return
@@ -179,7 +179,10 @@ def MergeData(data_path:str):
         new.paste(img_front, (0, 0))
         new.paste(img_left, (0, 600))
         new.paste(img_right, (0, 1200))
-        new.save(os.path.join(data_path, "rgb_full", "%04d.png" % i))
+        if convert_jpg:
+            new.save(os.path.join(data_path, "rgb_full", "%04d.jpg" % i), quality=95)
+        else:
+            new.save(os.path.join(data_path, "rgb_full", "%04d.png" % i))
 
         measurements = json.load(
             open(os.path.join(data_path, "measurements/%04d.json" % i))
@@ -226,12 +229,12 @@ def DeleteAfterMerge(data_path:str):
             shutil.rmtree(actor_data_path)
             # os.system('rm -rf %s' % actor_data_path)
 
-def MergeAndDelete(data_path:str):
+def MergeAndDelete(data_path:str,convert_jpg:bool):
     if not os.path.exists(data_path):
         raise Exception('Data path %s not exists' % data_path)
     if not os.path.isdir(data_path):
         raise Exception('Data path %s is not a directory' % data_path)
-    MergeData(data_path)
+    MergeData(data_path,convert_jpg)
     DeleteAfterMerge(data_path)
 
 def ConvertPngToJpg(data_path:str):
@@ -325,10 +328,11 @@ if __name__ == '__main__':
             logging.info('Found %d blocked data' % len(blocked_data_list))
             process_map(RemoveHazeData,blocked_data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Removing blocked data')
             process_map(RecollectBlockedData,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Recollecting blocked data')
+    bool_list = [args.convert_to_jpg]*len(data_list)
     if args.merge and args.delete_origin:
-        process_map(MergeAndDelete,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merge and delete origin data')
+        process_map(MergeAndDelete,data_list,bool_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merge and delete origin data')
     elif args.merge:
-        process_map(MergeData,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merging data')
+        process_map(MergeData,data_list,bool_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Merging data')
         logging.info('Not deleting origin data')
     else:
         logging.info('Not merging data')
