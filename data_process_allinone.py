@@ -110,6 +110,8 @@ def RemoveHazeData(task:tuple):
             os.remove(os.path.join(route_dir, key, dt[key] % i))
 
 def RecollectBlockedData(data_path:str):
+    if CheckMergeData(data_path):
+        return
     for folder in dt:
         temp = dt[folder]
         files = os.listdir(os.path.join(data_path, folder))

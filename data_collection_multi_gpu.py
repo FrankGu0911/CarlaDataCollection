@@ -116,8 +116,8 @@ def GetBashs(base_path:str,weather:int):
     path = os.path.join(base_path,'weather-%d' % weather)
     for root,dirs,files in os.walk(path):
         for file in files:
-            # if file in exception:
-            #     continue
+            if file in exception:
+                continue
             bash_list.append(os.path.join(root,file))
     bash_list.sort()
     return bash_list
