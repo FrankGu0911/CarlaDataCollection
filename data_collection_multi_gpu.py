@@ -2,6 +2,7 @@ import argparse,os,time,sys,logging,tqdm,datetime,subprocess,re
 from multiprocessing import Pool,Manager
 
 exceptions = ["routes_town01_long.sh","tiny"]
+weather_without_exceptions = [0,1,2,3,5,7,11,14,17,19,20]
 
 def SetArgParser():
     parser = argparse.ArgumentParser()
@@ -117,9 +118,12 @@ def GetBashs(base_path:str,weather:int):
     for root,dirs,files in os.walk(path):
         for file in files:
             flag = False
-            for exception in exceptions:
-                if exception in file:
-                    flag = True
+            if weather not in weather_without_exceptions:
+                for exception in exceptions:
+                    if exception in file:
+                        flag = True
+            else:
+                logging.info('Weather-%d is not in weather_without_exceptions' % weather)
             if not flag:
                 bash_list.append(os.path.join(root,file))
     bash_list.sort()
