@@ -8,3 +8,4 @@ log/
 .vscode/
 data_collection/bashs
 data_collection/batch_run
+model/pretrained

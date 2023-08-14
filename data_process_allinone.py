@@ -1,5 +1,12 @@
-import os,argparse,json,time,logging,shutil
+import os
+import argparse
+import json
+import time
+import logging
+import shutil
+import sys
 from tqdm.contrib.concurrent import process_map
+from tqdm import tqdm
 from PIL import Image
 import numpy as np
 
@@ -41,6 +48,8 @@ def SetArgParser():
     parser.add_argument('--merge',action='store_true',default=False)
     parser.add_argument('--delete_origin',action='store_true',default=False)
     parser.add_argument('--convert_to_jpg',action='store_true',default=False)
+    parser.add_argument('--vae_feature', action='store_true', default=False)
+    parser.add_argument('--clip_feature', action='store_true', default=False)
     parser.add_argument('--index',action='store_true',default=False)
     return parser.parse_args()
 
@@ -130,7 +139,7 @@ def RecollectBlockedData(data_path:str):
             except Exception as e:
                 print(e)
 
-def CheckMergeData(data_path:str):
+def CheckMergeData(data_path: str):
     if not os.path.exists(data_path):
         raise Exception('Data path %s not exists' % data_path)
     measurements_path = os.path.join(data_path,'measurements')
@@ -277,12 +286,12 @@ def ConvertPngToJpg(data_path:str):
             img = Image.open(os.path.join(rgb_rear_path,i))
             img.save(os.path.join(rgb_rear_path,i.replace('.png','.jpg')), quality=95)
             os.remove(os.path.join(rgb_rear_path,i))
-    
+
 def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
         raise Exception('Dataset path %s not exists' % dataset_path)
     routes = []
-    for i in range(14):
+    for i in range(21):
         weather_data_path = os.path.join(dataset_path,'weather-%d' % i,'data')
         if not os.path.exists(weather_data_path):
             logging.warning('Weather %d not exists' % i)
@@ -305,6 +314,136 @@ def GenerateDatasetIndexFile(dataset_path:str):
             f.write('%s %d\n' % (route,frames))
     f.close()
 
+
+def GenTopdownVAEFeature(datalist: list, model, batch_size: int = 16):
+    for data_path in tqdm(datalist, desc='Generating topdown vae feature'):
+        GenTopdownVAEFeatureSinglePath(data_path, model, batch_size)
+
+def GenTopdownVAEFeatureSinglePath(data_path: str, model, batch_size):
+    # get data length
+    topdown_path = os.path.join(data_path, 'topdown')
+    if not os.path.exists(topdown_path):
+        raise Exception('Topdown path %s not exists' % topdown_path)
+    if not os.path.isdir(topdown_path):
+        raise Exception('Topdown path %s is not a directory' % topdown_path)
+    data_length = len(os.listdir(topdown_path))
+    if os.path.exists(os.path.join(data_path, 'vae_feature')):
+        if len(os.listdir(os.path.join(data_path, 'vae_feature'))) == data_length:
+            logging.info('Data %s already processed' % data_path)
+            return
+    else:
+        os.mkdir(os.path.join(data_path, 'vae_feature'))
+    import torch
+    from torchvision import transforms
+    def get_one_hot(label, N):
+        dtype = label.dtype
+        shape = label.shape
+        ones = torch.eye(N)
+        important = [4, 19, 23]
+        for i in important:
+            ones[i][i] = 100
+        ones[6][6] = 10
+        onehot = ones.index_select(
+            0, label.int().view(-1)).reshape(*shape, N).to(dtype).squeeze(0).permute(2, 0, 1)
+        return onehot
+    def calc_crop(tar_x, tar_y):
+        if tar_x > 512 or tar_y > 512:
+            return (0, 0, 512, 512)
+        if tar_x < 0 or tar_y < 0:
+            raise ValueError("Target size should be positive")
+        if tar_x > 256 or tar_y > 256:
+            x = (512 - tar_x) // 2
+            return (x, 0, x+tar_x, tar_y)
+        else:
+            x = (512 - tar_x) // 2
+            y = 256 - tar_y
+            return (x, y, x+tar_x, y+tar_y)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    for i in range(0, data_length, batch_size):
+        batch_data = []
+        for j in range(i, i+batch_size):
+            if j >= data_length:
+                break
+            data = Image.open(os.path.join(topdown_path, '%04d.png' % j))
+            topdown_img = data.crop(calc_crop(256, 256))
+            topdown_img = (transforms.ToTensor()(
+                topdown_img) * 255).to(torch.uint8)
+            if torch.max(topdown_img) > 25:
+                logging.debug("Topdown image has value larger than 25: %s" % (
+                    os.path.join(topdown_path, '%04d.png' % j)))
+                # replace with 7
+                topdown_img = torch.where(topdown_img > 25, torch.Tensor(
+                    [7]).to(torch.uint8), topdown_img)
+            topdown_img = get_one_hot(topdown_img, 26).to(torch.float32)
+            batch_data.append(topdown_img)
+        batch_data = torch.stack(batch_data)
+        batch_data = batch_data.to(device)
+        model.eval()
+        with torch.no_grad():
+            mean, logvar = model.encoder(batch_data)
+            feature = model.sample(mean, logvar)
+        for j in range(i, i+batch_size):
+            if j >= data_length:
+                break
+            feature_path = os.path.join(
+                data_path, 'vae_feature', '%04d.pt' % j)
+            torch.save(feature[j-i], feature_path)
+
+def GenClipFeature(datalist: list, clip_encoder, batch_size: int = 8):
+    for data_path in tqdm(datalist,desc='Generating clip feature'):
+        GenClipFeatureSinglePath(data_path, clip_encoder, batch_size)
+
+def GenClipFeatureSinglePath(data_path: str, model, batch_size):
+    # get data length
+    import torch
+    from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize,InterpolationMode
+    if CheckMergeData(data_path):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        frames = len(os.listdir(os.path.join(data_path, "measurements_full")))
+        if os.path.exists(os.path.join(data_path, 'clip_feature')):
+            if len(os.listdir(os.path.join(data_path, 'clip_feature'))) == frames:
+                logging.info('Data %s already processed' % data_path)
+                return
+        else:
+            os.mkdir(os.path.join(data_path, 'clip_feature'))
+        for i in range(0, frames, batch_size):
+            batch_data = []
+            for j in range(i, i+batch_size):
+                if j >= frames:
+                    break
+                image_full = Image.open(os.path.join(
+                    data_path, 'rgb_full', '%04d.jpg' % j))
+                preprocess = Compose([
+                    Resize(224, interpolation=InterpolationMode.BILINEAR),
+                    CenterCrop(224),
+                    Normalize([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
+                    ])
+                image_front = ToTensor()(image_full.crop((0, 0, 800, 600))).unsqueeze(0).to(device)
+                image_left = ToTensor()(image_full.crop((0, 600, 800, 1200))).unsqueeze(0).to(device)
+                image_right = ToTensor()(image_full.crop((0, 1200, 800, 1800))).unsqueeze(0).to(device)
+                image_far = ToTensor()(image_full.crop((200, 150, 600, 450))).unsqueeze(0).to(device)
+                image_full_tensor = torch.cat(
+                    (preprocess(image_front), 
+                     preprocess(image_left), 
+                     preprocess(image_right), 
+                     preprocess(image_far)), dim=0)
+                batch_data.append(image_full_tensor)
+                # print(image_full_tensor.shape)
+            batch_data = torch.stack(batch_data).to(device).reshape(-1, 3, 224, 224)
+            model.eval()
+            with torch.no_grad():
+                clip_feature = model.encode_image(batch_data)
+            for j in range(i, i+batch_size):
+                if j >= frames:
+                    break
+                feature = clip_feature[4*i:4*(i+1)]
+                feature_path = os.path.join(
+                    data_path, 'clip_feature', '%04d.pt' % j)
+                torch.save(feature, feature_path)
+    else:
+        logging.error('Merge the data first')
+        raise Exception('Merge the data first')
+
 def GetChunkSize(data_list:list):
     chunk_size = len(data_list) // GetCpuNum()
     if chunk_size == 0:
@@ -318,7 +457,7 @@ if __name__ == '__main__':
     data_list.sort()
     chunksize = GetChunkSize(data_list)
     if data_list == []:
-        logging.warning('No data found')
+        logging.warning(f'No data found in {args.data_path}')
         exit(0)
     if args.remove_haze:
         blocked_data_list = []
@@ -340,7 +479,24 @@ if __name__ == '__main__':
         logging.info('Not merging data')
     if args.convert_to_jpg:
         process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Converting png to jpg')
+    if args.vae_feature:
+        import torch
+        from model.vae import VAE
+        vae_model_path = 'model/pretrained/vae_model_54.pth'
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = VAE(26, 26).to(device)
+        model.load_state_dict(torch.load(vae_model_path)['model_state_dict'])
+        GenTopdownVAEFeature(data_list, model, 32)
+        del model
+        torch.cuda.empty_cache()
+
+    if args.clip_feature:
+        import torch
+        import clip
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        clip_encoder, _ = clip.load("ViT-L/14", device=device)
+        GenClipFeature(data_list,clip_encoder,64)
+        del clip_encoder
+        torch.cuda.empty_cache()
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
-
-    
