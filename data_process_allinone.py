@@ -381,13 +381,14 @@ def GenTopdownVAEFeatureSinglePath(data_path: str, model, batch_size):
         model.eval()
         with torch.no_grad():
             mean, logvar = model.encoder(batch_data)
-            feature = model.sample(mean, logvar)
-        for j in range(i, i+batch_size):
-            if j >= data_length:
-                break
-            feature_path = os.path.join(
-                data_path, 'vae_feature', '%04d.pt' % j)
-            torch.save(feature[j-i], feature_path)
+            feature = model.sample(mean, logvar).detach()
+            for j in range(i, i+batch_size):
+                if j >= data_length:
+                    break
+                feature_path = os.path.join(
+                    data_path, 'vae_feature', '%04d.pt' % j)
+                cur_feature = feature[j-i].clone()
+                torch.save(cur_feature, feature_path)
 
 def GenClipFeature(datalist: list, clip_encoder, batch_size: int = 8):
     for data_path in tqdm(datalist,desc='Generating clip feature'):
@@ -436,7 +437,7 @@ def GenClipFeatureSinglePath(data_path: str, model, batch_size):
             for j in range(i, i+batch_size):
                 if j >= frames:
                     break
-                feature = clip_feature[4*i:4*(i+1)]
+                feature = clip_feature[4*i:4*(i+1)].clone()
                 feature_path = os.path.join(
                     data_path, 'clip_feature', '%04d.pt' % j)
                 torch.save(feature, feature_path)
