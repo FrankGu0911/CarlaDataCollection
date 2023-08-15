@@ -437,7 +437,7 @@ def GenClipFeatureSinglePath(data_path: str, model, batch_size):
             for j in range(i, i+batch_size):
                 if j >= frames:
                     break
-                feature = clip_feature[4*i:4*(i+1)].clone()
+                feature = clip_feature[4*(j-i):4*(j-i+1)].clone()
                 feature_path = os.path.join(
                     data_path, 'clip_feature', '%04d.pt' % j)
                 torch.save(feature, feature_path)
