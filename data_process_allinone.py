@@ -7,6 +7,7 @@ import shutil
 import sys
 from tqdm.contrib.concurrent import process_map
 from tqdm import tqdm
+from multiprocessing import Pool,Queue
 from PIL import Image
 import numpy as np
 
@@ -314,25 +315,70 @@ def GenerateDatasetIndexFile(dataset_path:str):
             f.write('%s %d\n' % (route,frames))
     f.close()
 
+def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
+    #  preprocess, inference, save
+    # get task first
+    tasks = []
+    for data_path in datalist:
+        topdown_path = os.path.join(data_path, 'topdown')
+        if not os.path.exists(topdown_path):
+            raise Exception('Topdown path %s not exists' % topdown_path)
+        if not os.path.isdir(topdown_path):
+            raise Exception('Topdown path %s is not a directory' % topdown_path)
+        data_length = len(os.listdir(topdown_path))
+        if os.path.exists(os.path.join(data_path, 'vae_feature')):
+            if len(os.listdir(os.path.join(data_path, 'vae_feature'))) == data_length:
+                logging.info('Data %s already processed' % data_path)
+                continue
+        else:
+            os.mkdir(os.path.join(data_path, 'vae_feature'))
+        for i in range(0, data_length):
+            tasks.append((data_path, i))
+    logging.debug('Total %d tasks' % len(tasks))
+    # start processing
+    total = len(tasks)
+    task_queue = Queue()
+    after_preprocess_queue = Queue(maxsize=4096)
+    for task in tasks:
+        task_queue.put(task)
+    preprocess_pool = Pool(GetCpuNum(),PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
+    preprocess_pool.close()
+    import torch
+    from model.vae import VAE
+    vae_model_path = 'model/pretrained/vae_model_54.pth'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = VAE(26, 26).to(device)
+    model.load_state_dict(torch.load(vae_model_path)['model_state_dict'])
+    model.eval()
+    with tqdm(total=total,desc='Generating topdown vae feature') as pbar:
+        while not (after_preprocess_queue.empty() and task_queue.empty()):
+            # tqdm.write('Preprocess queue size: %d' % after_preprocess_queue.qsize())
+            batch_data = []
+            batch_order = []
+            for i in range(batch_size):
+                if after_preprocess_queue.empty():
+                    break
+                batch = after_preprocess_queue.get()
+                batch_data.append(batch[2])
+                batch_order.append((batch[0],batch[1]))
+            if len(batch_data) == 0:
+                continue
+            batch_data = torch.stack(batch_data)
+            batch_data = batch_data.to(device)
+            with torch.no_grad():
+                mean, logvar = model.encoder(batch_data)
+                feature = model.sample(mean, logvar).detach()
+                for i in range(len(batch_order)):
+                    feature_path = os.path.join(
+                        batch_order[i][0], 'vae_feature', '%04d.pt' % batch_order[i][1])
+                    cur_feature = feature[i].clone()
+                    torch.save(cur_feature, feature_path)
+            pbar.update(len(batch_order))
+    preprocess_pool.join()
+    del model
+    torch.cuda.empty_cache()           
 
-def GenTopdownVAEFeature(datalist: list, model, batch_size: int = 16):
-    for data_path in tqdm(datalist, desc='Generating topdown vae feature'):
-        GenTopdownVAEFeatureSinglePath(data_path, model, batch_size)
-
-def GenTopdownVAEFeatureSinglePath(data_path: str, model, batch_size):
-    # get data length
-    topdown_path = os.path.join(data_path, 'topdown')
-    if not os.path.exists(topdown_path):
-        raise Exception('Topdown path %s not exists' % topdown_path)
-    if not os.path.isdir(topdown_path):
-        raise Exception('Topdown path %s is not a directory' % topdown_path)
-    data_length = len(os.listdir(topdown_path))
-    if os.path.exists(os.path.join(data_path, 'vae_feature')):
-        if len(os.listdir(os.path.join(data_path, 'vae_feature'))) == data_length:
-            logging.info('Data %s already processed' % data_path)
-            return
-    else:
-        os.mkdir(os.path.join(data_path, 'vae_feature'))
+def PreprocessTopdownVAEFeature(task_queue:Queue,after_preprocess_queue:Queue):
     import torch
     from torchvision import transforms
     def get_one_hot(label, N):
@@ -358,92 +404,111 @@ def GenTopdownVAEFeatureSinglePath(data_path: str, model, batch_size):
             x = (512 - tar_x) // 2
             y = 256 - tar_y
             return (x, y, x+tar_x, y+tar_y)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    for i in range(0, data_length, batch_size):
-        batch_data = []
-        for j in range(i, i+batch_size):
-            if j >= data_length:
-                break
-            data = Image.open(os.path.join(topdown_path, '%04d.png' % j))
-            topdown_img = data.crop(calc_crop(256, 256))
-            topdown_img = (transforms.ToTensor()(
-                topdown_img) * 255).to(torch.uint8)
-            if torch.max(topdown_img) > 25:
-                logging.debug("Topdown image has value larger than 25: %s" % (
-                    os.path.join(topdown_path, '%04d.png' % j)))
-                # replace with 7
-                topdown_img = torch.where(topdown_img > 25, torch.Tensor(
-                    [7]).to(torch.uint8), topdown_img)
-            topdown_img = get_one_hot(topdown_img, 26).to(torch.float32)
-            batch_data.append(topdown_img)
-        batch_data = torch.stack(batch_data)
-        batch_data = batch_data.to(device)
-        model.eval()
-        with torch.no_grad():
-            mean, logvar = model.encoder(batch_data)
-            feature = model.sample(mean, logvar).detach()
-            for j in range(i, i+batch_size):
-                if j >= data_length:
-                    break
-                feature_path = os.path.join(
-                    data_path, 'vae_feature', '%04d.pt' % j)
-                cur_feature = feature[j-i].clone()
-                torch.save(cur_feature, feature_path)
+    while not task_queue.empty():
+        task = task_queue.get()
+        data_path, i = task
+        topdown_path = os.path.join(data_path, 'topdown')
+        data = Image.open(os.path.join(topdown_path, '%04d.png' % i))
+        topdown_img = data.crop(calc_crop(256, 256))
+        topdown_img = (transforms.ToTensor()(
+            topdown_img) * 255).to(torch.uint8)
+        if torch.max(topdown_img) > 25:
+            logging.debug("Topdown image has value larger than 25: %s" % (
+                os.path.join(topdown_path, '%04d.png' % i)))
+            # replace with 7
+            topdown_img = torch.where(topdown_img > 25, torch.Tensor(
+                [7]).to(torch.uint8), topdown_img)
+        topdown_img = get_one_hot(topdown_img, 26).to(torch.float32).clone()
+        while after_preprocess_queue.full():
+            time.sleep(0.01)
+        after_preprocess_queue.put((data_path, i, topdown_img))
 
-def GenClipFeature(datalist: list, clip_encoder, batch_size: int = 8):
-    for data_path in tqdm(datalist,desc='Generating clip feature'):
-        GenClipFeatureSinglePath(data_path, clip_encoder, batch_size)
-
-def GenClipFeatureSinglePath(data_path: str, model, batch_size):
-    # get data length
+def GenClipFeature(datalist: list, batch_size: int = 16):
     import torch
-    from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize,InterpolationMode
-    if CheckMergeData(data_path):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        frames = len(os.listdir(os.path.join(data_path, "measurements_full")))
+    import clip
+    #  preprocess, inference, save
+    # get task first
+    tasks = []
+    for data_path in datalist:
+        frames = len(os.listdir(os.path.join(data_path, "rgb_full")))
         if os.path.exists(os.path.join(data_path, 'clip_feature')):
             if len(os.listdir(os.path.join(data_path, 'clip_feature'))) == frames:
                 logging.info('Data %s already processed' % data_path)
-                return
+                continue
         else:
             os.mkdir(os.path.join(data_path, 'clip_feature'))
-        for i in range(0, frames, batch_size):
+        for i in range(0, frames):
+            tasks.append((data_path, i))
+    logging.debug('Total %d tasks' % len(tasks))
+    # start processing
+    total = len(tasks)
+    task_queue = Queue()
+    after_preprocess_queue = Queue(maxsize=4096)
+    for task in tasks:
+        task_queue.put(task)
+    preprocess_pool = Pool(GetCpuNum(),PreprocessClipFeature,(task_queue,after_preprocess_queue))
+    preprocess_pool.close()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    clip_encoder, _ = clip.load("ViT-L/14", device=device)
+    clip_encoder.eval()
+    with tqdm(total=total,desc='Generating clip feature') as pbar:
+        while not (after_preprocess_queue.empty() and task_queue.empty()):
+            # tqdm.write('Preprocess queue size: %d' % after_preprocess_queue.qsize())
             batch_data = []
-            for j in range(i, i+batch_size):
-                if j >= frames:
+            batch_order = []
+            for i in range(batch_size):
+                if after_preprocess_queue.empty():
                     break
-                image_full = Image.open(os.path.join(
-                    data_path, 'rgb_full', '%04d.jpg' % j))
-                preprocess = Compose([
-                    Resize(224, interpolation=InterpolationMode.BILINEAR),
-                    CenterCrop(224),
-                    Normalize([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
-                    ])
-                image_front = ToTensor()(image_full.crop((0, 0, 800, 600))).unsqueeze(0).to(device)
-                image_left = ToTensor()(image_full.crop((0, 600, 800, 1200))).unsqueeze(0).to(device)
-                image_right = ToTensor()(image_full.crop((0, 1200, 800, 1800))).unsqueeze(0).to(device)
-                image_far = ToTensor()(image_full.crop((200, 150, 600, 450))).unsqueeze(0).to(device)
-                image_full_tensor = torch.cat(
-                    (preprocess(image_front), 
-                     preprocess(image_left), 
-                     preprocess(image_right), 
-                     preprocess(image_far)), dim=0)
-                batch_data.append(image_full_tensor)
-                # print(image_full_tensor.shape)
-            batch_data = torch.stack(batch_data).to(device).reshape(-1, 3, 224, 224)
-            model.eval()
+                batch = after_preprocess_queue.get()
+                batch_data.append(batch[2])
+                batch_order.append((batch[0],batch[1]))
+            if len(batch_data) == 0:
+                continue
+            batch_data = torch.stack(batch_data).reshape(-1, 3, 224, 224).to(device)
             with torch.no_grad():
-                clip_feature = model.encode_image(batch_data)
-            for j in range(i, i+batch_size):
-                if j >= frames:
-                    break
-                feature = clip_feature[4*(j-i):4*(j-i+1)].clone()
-                feature_path = os.path.join(
-                    data_path, 'clip_feature', '%04d.pt' % j)
-                torch.save(feature, feature_path)
-    else:
-        logging.error('Merge the data first')
-        raise Exception('Merge the data first')
+                clip_feature = clip_encoder.encode_image(batch_data)
+                for i in range(len(batch_order)):
+                    feature_path = os.path.join(
+                        batch_order[i][0], 'clip_feature', '%04d.pt' % batch_order[i][1])
+                    cur_feature = clip_feature[i:i+4].clone()
+                    torch.save(cur_feature, feature_path)
+            pbar.update(len(batch_order))
+    preprocess_pool.join()
+    del clip_encoder
+    torch.cuda.empty_cache()
+
+def PreprocessClipFeature(task_queue:Queue,after_preprocess_queue:Queue):
+    import torch
+    from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize,InterpolationMode
+    while not task_queue.empty():
+        data_path, i = task_queue.get()
+        if CheckMergeData(data_path):
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            frames = len(os.listdir(os.path.join(data_path, "measurements_full")))
+            if os.path.exists(os.path.join(data_path, 'clip_feature')):
+                if len(os.listdir(os.path.join(data_path, 'clip_feature'))) == frames:
+                    logging.info('Data %s already processed' % data_path)
+                    return
+            else:
+                os.mkdir(os.path.join(data_path, 'clip_feature'))
+        image_full = Image.open(os.path.join(data_path, 'rgb_full', '%04d.jpg' % i))
+        preprocess = Compose([
+            Resize(224, interpolation=InterpolationMode.BILINEAR),
+            CenterCrop(224),
+            Normalize([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
+            ])
+        image_front = ToTensor()(image_full.crop((0, 0, 800, 600))).unsqueeze(0)
+        image_left = ToTensor()(image_full.crop((0, 600, 800, 1200))).unsqueeze(0)
+        image_right = ToTensor()(image_full.crop((0, 1200, 800, 1800))).unsqueeze(0)
+        image_far = ToTensor()(image_full.crop((200, 150, 600, 450))).unsqueeze(0)
+        image_full_tensor = torch.cat(
+            (preprocess(image_front), 
+                preprocess(image_left), 
+                preprocess(image_right), 
+                preprocess(image_far)), dim=0)
+        while after_preprocess_queue.full():
+            time.sleep(0.01)
+        after_preprocess_queue.put((data_path, i, image_full_tensor))
 
 def GetChunkSize(data_list:list):
     chunk_size = len(data_list) // GetCpuNum()
@@ -481,23 +546,8 @@ if __name__ == '__main__':
     if args.convert_to_jpg:
         process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Converting png to jpg')
     if args.vae_feature:
-        import torch
-        from model.vae import VAE
-        vae_model_path = 'model/pretrained/vae_model_54.pth'
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = VAE(26, 26).to(device)
-        model.load_state_dict(torch.load(vae_model_path)['model_state_dict'])
-        GenTopdownVAEFeature(data_list, model, 32)
-        del model
-        torch.cuda.empty_cache()
-
+        GenTopdownVAEFeature(data_list, 16)
     if args.clip_feature:
-        import torch
-        import clip
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        clip_encoder, _ = clip.load("ViT-L/14", device=device)
-        GenClipFeature(data_list,clip_encoder,64)
-        del clip_encoder
-        torch.cuda.empty_cache()
+        GenClipFeature(data_list,16)
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
