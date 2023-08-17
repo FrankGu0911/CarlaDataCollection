@@ -339,10 +339,10 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
     # start processing
     total = len(tasks)
     task_queue = Queue()
-    after_preprocess_queue = Queue(maxsize=4096)
+    after_preprocess_queue = Queue(maxsize=64)
     for task in tasks:
         task_queue.put(task)
-    preprocess_pool = Pool(4,PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
+    preprocess_pool = Pool(1,PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
     preprocess_pool.close()
     import torch
     from model.vae import VAE
@@ -377,11 +377,12 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
             pbar.update(len(batch_order))
     preprocess_pool.join()
     del model
-    torch.cuda.empty_cache()           
+    torch.cuda.empty_cache()
 
 def PreprocessTopdownVAEFeature(task_queue,after_preprocess_queue):
     import torch
     from torchvision import transforms
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     def get_one_hot(label, N):
         dtype = label.dtype
         shape = label.shape
@@ -419,7 +420,7 @@ def PreprocessTopdownVAEFeature(task_queue,after_preprocess_queue):
             # replace with 7
             topdown_img = torch.where(topdown_img > 25, torch.Tensor(
                 [7]).to(torch.uint8), topdown_img)
-        topdown_img = get_one_hot(topdown_img, 26).to(torch.float32).clone()
+        topdown_img = get_one_hot(topdown_img, 26).to(torch.float32).to(device)
         while after_preprocess_queue.full():
             time.sleep(0.01)
         after_preprocess_queue.put((data_path, i, topdown_img))
@@ -546,7 +547,7 @@ if __name__ == '__main__':
     if args.convert_to_jpg:
         process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Converting png to jpg')
     if args.vae_feature:
-        GenTopdownVAEFeature(data_list, 16)
+        GenTopdownVAEFeature(data_list)
     if args.clip_feature:
         GenClipFeature(data_list,16)
     if args.index:
