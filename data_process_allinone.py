@@ -7,7 +7,6 @@ import shutil
 import sys
 from tqdm.contrib.concurrent import process_map
 from tqdm import tqdm
-from multiprocessing import Pool,Queue
 from PIL import Image
 import numpy as np
 
@@ -318,6 +317,8 @@ def GenerateDatasetIndexFile(dataset_path:str):
 def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
     #  preprocess, inference, save
     # get task first
+    import torch.multiprocessing as mp
+    from torch.multiprocessing import Pool,Queue
     tasks = []
     for data_path in datalist:
         topdown_path = os.path.join(data_path, 'topdown')
@@ -378,7 +379,7 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
     del model
     torch.cuda.empty_cache()           
 
-def PreprocessTopdownVAEFeature(task_queue:Queue,after_preprocess_queue:Queue):
+def PreprocessTopdownVAEFeature(task_queue,after_preprocess_queue):
     import torch
     from torchvision import transforms
     def get_one_hot(label, N):
@@ -428,6 +429,9 @@ def PreprocessTopdownVAEFeature(task_queue:Queue,after_preprocess_queue:Queue):
 def GenClipFeature(datalist: list, batch_size: int = 16):
     import torch
     import clip
+    import torch.multiprocessing as mp
+    from torch.multiprocessing import Pool,Queue
+    mp.set_start_method('spawn')
     #  preprocess, inference, save
     # get task first
     tasks = []
@@ -448,7 +452,7 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
     after_preprocess_queue = Queue(maxsize=4096)
     for task in tasks:
         task_queue.put(task)
-    preprocess_pool = Pool(GetCpuNum(),PreprocessClipFeature,(task_queue,after_preprocess_queue))
+    preprocess_pool = Pool(1,PreprocessClipFeature,(task_queue,after_preprocess_queue))
     preprocess_pool.close()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     clip_encoder, _ = clip.load("ViT-L/14", device=device)
@@ -466,7 +470,7 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
                 batch_order.append((batch[0],batch[1]))
             if len(batch_data) == 0:
                 continue
-            batch_data = torch.stack(batch_data).reshape(-1, 3, 224, 224).to(device)
+            batch_data = torch.stack(batch_data).reshape(-1, 3, 224, 224)
             with torch.no_grad():
                 clip_feature = clip_encoder.encode_image(batch_data)
                 for i in range(len(batch_order)):
@@ -479,30 +483,22 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
     del clip_encoder
     torch.cuda.empty_cache()
 
-def PreprocessClipFeature(task_queue:Queue,after_preprocess_queue:Queue):
+def PreprocessClipFeature(task_queue,after_preprocess_queue):
     import torch
     from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize,InterpolationMode
     while not task_queue.empty():
         data_path, i = task_queue.get()
-        if CheckMergeData(data_path):
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            frames = len(os.listdir(os.path.join(data_path, "measurements_full")))
-            if os.path.exists(os.path.join(data_path, 'clip_feature')):
-                if len(os.listdir(os.path.join(data_path, 'clip_feature'))) == frames:
-                    logging.info('Data %s already processed' % data_path)
-                    return
-            else:
-                os.mkdir(os.path.join(data_path, 'clip_feature'))
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         image_full = Image.open(os.path.join(data_path, 'rgb_full', '%04d.jpg' % i))
         preprocess = Compose([
             Resize(224, interpolation=InterpolationMode.BILINEAR),
             CenterCrop(224),
             Normalize([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
             ])
-        image_front = ToTensor()(image_full.crop((0, 0, 800, 600))).unsqueeze(0)
-        image_left = ToTensor()(image_full.crop((0, 600, 800, 1200))).unsqueeze(0)
-        image_right = ToTensor()(image_full.crop((0, 1200, 800, 1800))).unsqueeze(0)
-        image_far = ToTensor()(image_full.crop((200, 150, 600, 450))).unsqueeze(0)
+        image_front = ToTensor()(image_full.crop((0, 0, 800, 600))).unsqueeze(0).to(device)
+        image_left = ToTensor()(image_full.crop((0, 600, 800, 1200))).unsqueeze(0).to(device)
+        image_right = ToTensor()(image_full.crop((0, 1200, 800, 1800))).unsqueeze(0).to(device)
+        image_far = ToTensor()(image_full.crop((200, 150, 600, 450))).unsqueeze(0).to(device)
         image_full_tensor = torch.cat(
             (preprocess(image_front), 
                 preprocess(image_left), 
