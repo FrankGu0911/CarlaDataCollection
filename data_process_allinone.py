@@ -422,6 +422,8 @@ def PreprocessTopdownVAEFeature(task_queue:Queue,after_preprocess_queue:Queue):
         while after_preprocess_queue.full():
             time.sleep(0.01)
         after_preprocess_queue.put((data_path, i, topdown_img))
+    while not after_preprocess_queue.empty():
+        time.sleep(0.1)
 
 def GenClipFeature(datalist: list, batch_size: int = 16):
     import torch
@@ -509,6 +511,8 @@ def PreprocessClipFeature(task_queue:Queue,after_preprocess_queue:Queue):
         while after_preprocess_queue.full():
             time.sleep(0.01)
         after_preprocess_queue.put((data_path, i, image_full_tensor))
+    while not after_preprocess_queue.empty():
+        time.sleep(0.1)
 
 def GetChunkSize(data_list:list):
     chunk_size = len(data_list) // GetCpuNum()
