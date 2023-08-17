@@ -342,7 +342,7 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
     after_preprocess_queue = Queue(maxsize=4096)
     for task in tasks:
         task_queue.put(task)
-    preprocess_pool = Pool(GetCpuNum(),PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
+    preprocess_pool = Pool(4,PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
     preprocess_pool.close()
     import torch
     from model.vae import VAE
