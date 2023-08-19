@@ -363,7 +363,14 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
                 batch_data.append(batch[2])
                 batch_order.append((batch[0],batch[1]))
             if len(batch_data) == 0:
-                continue
+                if (after_preprocess_queue.empty() and task_queue.empty()):
+                    break
+                elif after_preprocess_queue.empty() and not task_queue.empty():
+                    logging.info('Batch data is empty, task queue not,continue')
+                    continue
+                elif not after_preprocess_queue.empty() and task_queue.empty(): 
+                    logging.info('Batch data is empty, task queue is empty,continue')
+                    continue
             batch_data = torch.stack(batch_data)
             batch_data = batch_data.to(device)
             with torch.no_grad():
@@ -375,7 +382,6 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
                     cur_feature = feature[i].clone()
                     torch.save(cur_feature, feature_path)
             pbar.update(len(batch_order))
-    preprocess_pool.join()
     del model
     torch.cuda.empty_cache()
 
@@ -422,10 +428,11 @@ def PreprocessTopdownVAEFeature(task_queue,after_preprocess_queue):
                 [7]).to(torch.uint8), topdown_img)
         topdown_img = get_one_hot(topdown_img, 26).to(torch.float32).to(device)
         while after_preprocess_queue.full():
-            time.sleep(0.01)
+            time.sleep(0.1)
         after_preprocess_queue.put((data_path, i, topdown_img))
     while not after_preprocess_queue.empty():
-        time.sleep(0.1)
+        logging.info('Preprocess VAE waiting')
+        time.sleep(1)
 
 def GenClipFeature(datalist: list, batch_size: int = 16):
     import torch
@@ -470,7 +477,14 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
                 batch_data.append(batch[2])
                 batch_order.append((batch[0],batch[1]))
             if len(batch_data) == 0:
-                continue
+                if (after_preprocess_queue.empty() and task_queue.empty()):
+                    break
+                elif after_preprocess_queue.empty() and not task_queue.empty():
+                    logging.info('Batch data is empty, task queue not,continue')
+                    continue
+                elif not after_preprocess_queue.empty() and task_queue.empty(): 
+                    logging.info('Batch data is empty, task queue is empty,continue')
+                    continue
             batch_data = torch.stack(batch_data).reshape(-1, 3, 224, 224)
             with torch.no_grad():
                 clip_feature = clip_encoder.encode_image(batch_data)
@@ -480,7 +494,6 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
                     cur_feature = clip_feature[i:i+4].clone()
                     torch.save(cur_feature, feature_path)
             pbar.update(len(batch_order))
-    preprocess_pool.join()
     del clip_encoder
     torch.cuda.empty_cache()
 
@@ -506,10 +519,11 @@ def PreprocessClipFeature(task_queue,after_preprocess_queue):
                 preprocess(image_right), 
                 preprocess(image_far)), dim=0)
         while after_preprocess_queue.full():
-            time.sleep(0.01)
+            time.sleep(0.1)
         after_preprocess_queue.put((data_path, i, image_full_tensor))
     while not after_preprocess_queue.empty():
-        time.sleep(0.1)
+        logging.info('Preprocess Clip waiting')
+        time.sleep(1)
 
 def GetChunkSize(data_list:list):
     chunk_size = len(data_list) // GetCpuNum()
