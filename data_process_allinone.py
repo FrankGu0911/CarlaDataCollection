@@ -485,6 +485,9 @@ def GenClipFeature(datalist: list, batch_size: int = 16):
                 elif not after_preprocess_queue.empty() and task_queue.empty(): 
                     logging.info('Batch data is empty, task queue is empty,continue')
                     continue
+                else:
+                    logging.info('Waiting for preprocessing')
+                    continue
             batch_data = torch.stack(batch_data).reshape(-1, 3, 224, 224)
             with torch.no_grad():
                 clip_feature = clip_encoder.encode_image(batch_data)
