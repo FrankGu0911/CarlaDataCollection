@@ -371,6 +371,9 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
                 elif not after_preprocess_queue.empty() and task_queue.empty(): 
                     logging.info('Batch data is empty, task queue is empty,continue')
                     continue
+                else:
+                    logging.info('Waiting for preprocessing')
+                    continue
             batch_data = torch.stack(batch_data)
             batch_data = batch_data.to(device)
             with torch.no_grad():
