@@ -291,6 +291,7 @@ def GenerateDatasetIndexFile(dataset_path:str):
     if not os.path.exists(dataset_path):
         raise Exception('Dataset path %s not exists' % dataset_path)
     routes = []
+    length = 0
     for i in range(21):
         weather_data_path = os.path.join(dataset_path,'weather-%d' % i,'data')
         if not os.path.exists(weather_data_path):
@@ -308,6 +309,9 @@ def GenerateDatasetIndexFile(dataset_path:str):
                 frames = len(os.listdir(os.path.join(route_path, "measurements")))
             relative_route_path = os.path.join('weather-%d' % i,'data',route)
             routes.append((relative_route_path,frames))
+            length += frames
+    logging.info('Total %d routes' % len(routes))
+    logging.info('Total %d frames' % length)
     dataset_index_filepath = os.path.join(dataset_path,'dataset_index.txt')
     with open(dataset_index_filepath,'w') as f:
         for route,frames in routes:
@@ -538,7 +542,7 @@ def GetChunkSize(data_list:list):
     return chunk_size
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
     data_list = GetDataListFromPath(args.data_path)
     data_list.sort()
