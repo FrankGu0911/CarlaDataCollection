@@ -44,6 +44,7 @@ dt = {
 def SetArgParser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path',type=str,required=True)
+    parser.add_argument('--weather',type=int,nargs='+',default=[0,1,2,3,4,5,6,7,8,9,10,11,12,13])
     parser.add_argument('--remove_haze',action='store_true',default=False)
     parser.add_argument('--merge',action='store_true',default=False)
     parser.add_argument('--delete_origin',action='store_true',default=False)
@@ -56,9 +57,11 @@ def SetArgParser():
 def GetCpuNum():
     return os.cpu_count()
 
-def GetDataListFromPath(path:str):
+def GetDataListFromPath(path:str,weather_list:list):
     data_list = []
-    for i in range(21):
+    logging.debug('Getting data list from %s' % path)
+    logging.debug('Weather list: %s' % weather_list)
+    for i in weather_list:
         data_path = os.path.join(path,'weather-%d' % i,'data')
         if not os.path.exists(data_path):
             # print('Path %s not exists' % data_path)
@@ -333,7 +336,7 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
         data_length = len(os.listdir(topdown_path))
         if os.path.exists(os.path.join(data_path, 'vae_feature')):
             if len(os.listdir(os.path.join(data_path, 'vae_feature'))) == data_length:
-                logging.info('Data %s already processed' % data_path)
+                logging.debug('Data %s already processed' % data_path)
                 continue
         else:
             os.mkdir(os.path.join(data_path, 'vae_feature'))
@@ -343,14 +346,14 @@ def GenTopdownVAEFeature(datalist: list, batch_size: int = 8):
     # start processing
     total = len(tasks)
     task_queue = Queue()
-    after_preprocess_queue = Queue(maxsize=64)
+    after_preprocess_queue = Queue(maxsize=128)
     for task in tasks:
         task_queue.put(task)
     preprocess_pool = Pool(1,PreprocessTopdownVAEFeature,(task_queue,after_preprocess_queue))
     preprocess_pool.close()
     import torch
     from model.vae import VAE
-    vae_model_path = 'model/pretrained/vae_model_54.pth'
+    vae_model_path = '/home/frank/code/diff_study/pretrained/vae_one_hot/vae_model_68.pth'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = VAE(26, 26).to(device)
     model.load_state_dict(torch.load(vae_model_path)['model_state_dict'])
@@ -544,7 +547,7 @@ def GetChunkSize(data_list:list):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
-    data_list = GetDataListFromPath(args.data_path)
+    data_list = GetDataListFromPath(args.data_path,args.weather)
     data_list.sort()
     chunksize = GetChunkSize(data_list)
     if data_list == []:
@@ -571,7 +574,7 @@ if __name__ == '__main__':
     if args.convert_to_jpg:
         process_map(ConvertPngToJpg,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Converting png to jpg')
     if args.vae_feature:
-        GenTopdownVAEFeature(data_list)
+        GenTopdownVAEFeature(data_list,batch_size=32)
     if args.clip_feature:
         GenClipFeature(data_list,16)
     if args.index:
