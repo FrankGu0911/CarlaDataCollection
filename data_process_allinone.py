@@ -51,6 +51,7 @@ def SetArgParser():
     parser.add_argument('--convert_to_jpg',action='store_true',default=False)
     parser.add_argument('--vae_feature', action='store_true', default=False)
     parser.add_argument('--clip_feature', action='store_true', default=False)
+    parser.add_argument('--copy_to_path', type=str, default='')
     parser.add_argument('--index',action='store_true',default=False)
     return parser.parse_args()
 
@@ -544,6 +545,24 @@ def GetChunkSize(data_list:list):
         chunk_size = 1
     return chunk_size
 
+def Copy2Path(data_path:str,copy_path:str):
+    if copy_path == '':
+        return
+    if not os.path.exists(data_path):
+        raise Exception('Data path %s not exists' % data_path)
+    # /media/frank/sn640-0/dataset/dataset-val/weather-5/data/routes_town03_short_w5_08_08_09_41_01
+    # --> weather-5/data/routes_town03_short_w5_08_08_09_41_01
+    path_surfix = '/'.join(data_path.split('/')[-3:])
+    copy_path = os.path.join(copy_path,path_surfix)
+    if not os.path.exists(copy_path):
+        os.makedirs(copy_path)
+    copy_list = ['clip_feature','measurements_full','vae_feature']
+    for i in copy_list:
+        cur_path = os.path.join(data_path,i)
+        if not os.path.exists(cur_path):
+            os.makedirs(cur_path)
+        shutil.copytree(cur_path,os.path.join(copy_path,i.split('/')[-1]))
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     args = SetArgParser()
@@ -577,5 +596,7 @@ if __name__ == '__main__':
         GenTopdownVAEFeature(data_list,batch_size=32)
     if args.clip_feature:
         GenClipFeature(data_list,16)
+    if args.copy_to_path:
+        process_map(Copy2Path,data_list,[args.copy_to_path]*len(data_list),max_workers=GetCpuNum(),chunksize=chunksize,desc='Copying to path')
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
