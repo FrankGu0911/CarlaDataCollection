@@ -52,6 +52,7 @@ def SetArgParser():
     parser.add_argument('--vae_feature', action='store_true', default=False)
     parser.add_argument('--clip_feature', action='store_true', default=False)
     parser.add_argument('--copy_to_path', type=str, default='')
+    parser.add_argument('--gen_lidar_2d',action='store_true',default=False)
     parser.add_argument('--index',action='store_true',default=False)
     return parser.parse_args()
 
@@ -556,12 +557,34 @@ def Copy2Path(data_path:str,copy_path:str):
     copy_path = os.path.join(copy_path,path_surfix)
     if not os.path.exists(copy_path):
         os.makedirs(copy_path)
-    copy_list = ['clip_feature','measurements_full','vae_feature']
+    copy_list = ['clip_feature','measurements_full','vae_feature','lidar_2d']
     for i in copy_list:
         cur_path = os.path.join(data_path,i)
         if not os.path.exists(cur_path):
             os.makedirs(cur_path)
         shutil.copytree(cur_path,os.path.join(copy_path,i.split('/')[-1]))
+
+def GenLidar2d(data_path:str):
+    if not os.path.exists(data_path):
+        raise Exception('Data path %s not exists' % data_path)
+    if not os.path.exists(os.path.join(data_path,'lidar')):
+        raise Exception('Lidar path %s not exists' % os.path.join(data_path,'lidar'))
+    if not os.path.exists(os.path.join(data_path,'lidar_2d')):
+        os.mkdir(os.path.join(data_path,'lidar_2d'))
+    for i in os.listdir(os.path.join(data_path,'lidar')):
+        if i.endswith('.npy'):
+            lidar_raw = np.load(os.path.join(data_path,'lidar',i))[:,:3]
+            lidar_raw[:,0] = -lidar_raw[:,0]
+            lidar_raw = lidar_raw[(lidar_raw[:,2] > -2.0)]
+            lidar_raw = lidar_raw[(lidar_raw[:,0] > -22.5)]
+            lidar_raw = lidar_raw[(lidar_raw[:,0] < 22.5)]
+            lidar_raw = lidar_raw[(lidar_raw[:,1] < 45)]
+            lidar_raw = lidar_raw[(lidar_raw[:,1] > 0)]
+            lidar_2d = np.zeros((256,256))
+            for p in lidar_raw:
+                lidar_2d[int((45-p[1])/45*256),int((p[0]+22.5)/45*256)] = 1
+            img = Image.fromarray(lidar_2d*255).convert('L')
+            img.save(os.path.join(data_path,'lidar_2d',i.replace('.npy','.png')))
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -598,5 +621,7 @@ if __name__ == '__main__':
         GenClipFeature(data_list,16)
     if args.copy_to_path:
         process_map(Copy2Path,data_list,[args.copy_to_path]*len(data_list),max_workers=GetCpuNum(),chunksize=chunksize,desc='Copying to path')
+    if args.gen_lidar_2d:
+        process_map(GenLidar2d,data_list,max_workers=GetCpuNum(),chunksize=chunksize,desc='Generating lidar 2d')
     if args.index:
         GenerateDatasetIndexFile(args.data_path)
