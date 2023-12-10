@@ -575,15 +575,23 @@ def GenLidar2d(data_path:str):
         if i.endswith('.npy'):
             lidar_raw = np.load(os.path.join(data_path,'lidar',i))[:,:3]
             lidar_raw[:,0] = -lidar_raw[:,0]
-            lidar_raw = lidar_raw[(lidar_raw[:,2] > -2.0)]
             lidar_raw = lidar_raw[(lidar_raw[:,0] > -22.5)]
             lidar_raw = lidar_raw[(lidar_raw[:,0] < 22.5)]
             lidar_raw = lidar_raw[(lidar_raw[:,1] < 45)]
             lidar_raw = lidar_raw[(lidar_raw[:,1] > 0)]
-            lidar_2d = np.zeros((256,256))
-            for p in lidar_raw:
-                lidar_2d[int((45-p[1])/45*256),int((p[0]+22.5)/45*256)] = 1
-            img = Image.fromarray(lidar_2d*255).convert('L')
+            lidar_down = lidar_raw[(lidar_raw[:,2] <= -2.3)]
+            lidar_middle = lidar_raw[(lidar_raw[:,2] > -2.3)]
+            lidar_middle = lidar_middle[(lidar_middle[:,2] < 1)]
+            lidar_up = lidar_raw[(lidar_raw[:,2] > 1)]
+            lidar_2d = np.zeros((3,256,256),dtype=np.uint8)
+            for p in lidar_down:
+                lidar_2d[0][int((45-p[1])/45*256)][int((p[0]+22.5)/45*256)] += 1
+            for p in lidar_middle:
+                lidar_2d[1][int((45-p[1])/45*256)][int((p[0]+22.5)/45*256)] += 1
+            for p in lidar_up:
+                lidar_2d[2][int((45-p[1])/45*256)][int((p[0]+22.5)/45*256)] += 1
+            lidar_2d = np.transpose(lidar_2d,(1,2,0))
+            img = Image.fromarray(lidar_2d)
             img.save(os.path.join(data_path,'lidar_2d',i.replace('.npy','.png')))
 
 if __name__ == '__main__':
